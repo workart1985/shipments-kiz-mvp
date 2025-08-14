@@ -19,13 +19,18 @@ export async function GET(req: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  const mapped = (data ?? []).map((s: any) => ({
-    shipment_id: s.shipment_id,
-    number_in_day: s.number_in_day,
-    status: s.status,
-    delivery_date: s.delivery_date,
-    label: `${warehouse}-${date}-${String(s.number_in_day).padStart(3,'0')}`
-  }));
+  const mapped = (data ?? []).map((s: any) => {
+    const n = String(s.number_in_day).padStart(3,'0');
+    const dd = s.delivery_date ?? '—';
+    return {
+      shipment_id: s.shipment_id,
+      number_in_day: s.number_in_day,
+      status: s.status,
+      delivery_date: s.delivery_date,
+      // Формат: Склад-<дата поставки>-<дата отгрузки>-NNN
+      label: `${warehouse}-${date}-${dd}-${n}`,
+    };
+  });
 
   return NextResponse.json(mapped);
 }

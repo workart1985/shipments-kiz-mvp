@@ -22,7 +22,8 @@ export async function POST(req: Request) {
     return NextResponse.json({
       shipment_id: row.shipment_id,
       number_in_day: row.number_in_day,
-      human_number: `${body.warehouse}-${body.shipment_date}-${number}`
+      human_number: `${body.warehouse}-${body.shipment_date}-${'—'}-${number}`,
+      delivery_date: null
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message ?? 'create_shipment failed' }, { status: 400 });

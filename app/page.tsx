@@ -33,7 +33,7 @@ export default function Home() {
 
   // Блок 2
   const [barcode, setBarcode] = useState('');
-  const [withKIZ, setWithKIZ] = useState(true);
+  const [withKIZ, setWithKIZ] = useState(true); // включаем по умолчанию
   const [kiz, setKiz] = useState('');
   const [wbCode, setWbCode] = useState('');
   const [supplierCode, setSupplierCode] = useState('');
@@ -81,17 +81,24 @@ export default function Home() {
     setSummary([]);
   }, [shipmentId]);
 
+  // При выборе поставки — подтягиваем её текущую дату отгрузки
+  useEffect(() => {
+    if (!shipmentId) { setDeliveryDate(null); return; }
+    const s = shipments.find(x => x.shipment_id === shipmentId);
+    setDeliveryDate(s?.delivery_date ?? null);
+  }, [shipmentId, shipments]);
+
   // Автофокус на поле ШК
   useEffect(() => {
     barcodeRef.current?.focus();
   }, [shipmentId, boxId]);
 
-  // Если включили КИЗ и у нас всё готово к вводу — сразу переводим фокус на поле КИЗ
+  // Если включили КИЗ и контекст готов — ведём фокус на поле КИЗ
   useEffect(() => {
     if (withKIZ && shipmentId && boxId && barcode.trim()) {
       kizRef.current?.focus();
     }
-  }, [withKIZ]);
+  }, [withKIZ, shipmentId, boxId, barcode]);
 
   const createShipment = async () => {
     const res = await fetch('/api/shipments/create', {
@@ -185,21 +192,29 @@ export default function Home() {
   };
 
   const saveDeliveryDateInfo = async () => {
-    if (!shipmentId) return;
-    setToast({ type:'success', text:'Дата отгрузки сохранена (локально для MVP)' });
+    if (!shipmentId) { setToast({ type:'error', text:'Сначала выберите поставку' }); return; }
+    const res = await fetch(`/api/shipments/${shipmentId}`, {
+      method:'PATCH',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ delivery_date: deliveryDate || null })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setToast({ type:'error', text: data.error || 'Не удалось сохранить дату отгрузки' });
+      return;
+    }
+    await loadShipments(); // обновим ярлыки
+    setToast({ type:'success', text:'Дата отгрузки сохранена' });
   };
 
-  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-  // НОВОЕ: обработчики Enter для быстрого ввода
+  // Быстрый ввод: Enter в ШК → фокус в КИЗ (если нужен); Enter в КИЗ → добавить
   const handleBarcodeKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
     if (e.key === 'Enter') {
       if (withKIZ) {
-        // если нужен КИЗ — прыгаем фокусом на поле КИЗ
         e.preventDefault();
         if (!barcode.trim()) { setToast({ type:'error', text:'Заполните ШК' }); return; }
         kizRef.current?.focus();
       } else {
-        // если КИЗ не нужен — сразу добавляем
         if (canAdd) onAdd();
         else setToast({ type:'error', text:'Выберите поставку и короб' });
       }
@@ -213,7 +228,6 @@ export default function Home() {
       else setToast({ type:'error', text:'Заполните КИЗ' });
     }
   };
-  // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
@@ -249,7 +263,8 @@ export default function Home() {
         <div className="flex flex-col">
           <label className="text-sm text-gray-600 mb-1">Дата отгрузки (инфо)</label>
           <input type="date" className="border rounded px-3 py-2"
-                 value={deliveryDate ?? ''} onChange={e=>setDeliveryDate(e.target.value)} />
+                 value={deliveryDate ?? ''}
+                 onChange={e=>setDeliveryDate(e.target.value)} />
         </div>
 
         <div className="flex items-end gap-2">
@@ -311,13 +326,13 @@ export default function Home() {
             <button
               disabled={!canAdd}
               onClick={onAdd}
-              className={`w-full px-3 py-2 rounded ${canAdd?'bg-green-600 text-white':'bg-gray-200 text-gray-500'}`}
+              className={`w/full px-3 py-2 rounded ${canAdd?'bg-green-600 text-white':'bg-gray-200 text-gray-500'}`}
             >
               Добавить
             </button>
           </div>
 
-          {/* Доп.поля — по желанию, можно скрыть в MVP */}
+          {/* Доп.поля — по желанию */}
           <div>
             <label className="text-xs text-gray-500 block">Артикул WB</label>
             <input value={wbCode} onChange={e=>setWbCode(e.target.value)} className="border rounded px-2 py-1 w-full" />
