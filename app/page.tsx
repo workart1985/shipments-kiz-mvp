@@ -33,7 +33,7 @@ export default function Home() {
 
   // Блок 2
   const [barcode, setBarcode] = useState('');
-  const [withKIZ, setWithKIZ] = useState(true); // включен по умолчанию
+  const [withKIZ, setWithKIZ] = useState(true); // включён по умолчанию
   const [kiz, setKiz] = useState('');
   const [wbCode, setWbCode] = useState('');
   const [supplierCode, setSupplierCode] = useState('');
@@ -42,6 +42,7 @@ export default function Home() {
   // Блок 3
   const [listing, setListing] = useState<ListingRow[]>([]);
   const [summary, setSummary] = useState<BoxSummaryRow[]>([]);
+  const [listLimit, setListLimit] = useState<number>(200);
 
   // Уведомления
   const [toast, setToast] = useState<{type:'success'|'error', text:string} | null>(null);
@@ -49,9 +50,6 @@ export default function Home() {
   // Рефы
   const barcodeRef = useRef<HTMLInputElement>(null);
   const kizRef = useRef<HTMLInputElement>(null);
-
-  // Лимит для листинга (последние N строк)
-  const [listLimit, setListLimit] = useState<number>(200);
 
   const canAdd = useMemo(() => {
     if (!shipmentId || !boxId) return false;
@@ -143,7 +141,7 @@ export default function Home() {
   const refreshDataViews = async () => {
     if (!shipmentId) return;
     const [lres, sres] = await Promise.all([
-      fetch(`/api/shipments/${shipmentId}/listing?limit=${listLimit}`),
+      fetch(`/api/shipments/${shipmentId}/listing?limit=${listLimit}&box_id=${boxId}`),
       boxId ? fetch(`/api/boxes/${boxId}/summary`) : Promise.resolve({ ok:true, json: async()=>[] as any })
     ]);
     const ldata = await lres.json();
@@ -373,16 +371,53 @@ export default function Home() {
             r.barcode, r.wb_code??'', r.supplier_code??'', r.size??'', r.kiz_code??'', new Date(r.created_at).toLocaleString(),
             <button key={`del-${r.id}`} onClick={()=>onDeleteRow(r.id)} className="text-red-600 hover:underline">Удалить</button>
           ])}
+          maxHeightClass="max-h-96"
         />
       </div>
 
-      <div>
+      <div className="mb-6">
         <h2 className="font-semibold mb-2">Сводная по коробу</h2>
         <Table
-          header={['ШК','Артикул WB','Артикул пост.','Размер','КИЗ','Кол-во']}
-          rows={summary.map(s=>[s.barcode, s.wb_code??'', s.supplier_code??'', s.size??'', s.kiz_code??'', s.qty])}
+          header={['ШК','Артикул WB','Артикул пост.','Размер','Кол-во']}
+          rows={summary.map(s=>[s.barcode, s.wb_code??'', s.supplier_code??'', s.size??'', s.qty])}
+          maxHeightClass="max-h-80"
         />
       </div>
+
+      <div className="mt-6">
+        <h2 className="font-semibold mb-2">Сводная по поставке</h2>
+        <ShipmentSummary shipmentId={shipmentId} />
+      </div>
     </div>
+  );
+}
+
+/** КОМПОНЕНТ: сводная по поставке (без КИЗ) */
+function ShipmentSummary({ shipmentId }: { shipmentId: string }) {
+  const [rows, setRows] = useState<Array<{
+    shipment_id: string;
+    barcode: string;
+    wb_code: string | null;
+    supplier_code: string | null;
+    size: string | null;
+    qty: number;
+  }>>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!shipmentId) { setRows([]); return; }
+      const res = await fetch(`/api/shipments/${shipmentId}/summary`);
+      const data = await res.json();
+      if (res.ok) setRows(data);
+    };
+    load();
+  }, [shipmentId]);
+
+  return (
+    <Table
+      header={['ШК','Артикул WB','Артикул пост.','Размер','Кол-во']}
+      rows={rows.map(s=>[s.barcode, s.wb_code??'', s.supplier_code??'', s.size??'', s.qty])}
+      maxHeightClass="max-h-80"
+    />
   );
 }

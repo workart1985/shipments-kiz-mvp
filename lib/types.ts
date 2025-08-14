@@ -28,6 +28,14 @@ export type BoxSummaryRow = {
   wb_code: string | null;
   supplier_code: string | null;
   size: string | null;
-  kiz_code: string | null;
+  qty: number;
+};
+
+export type ShipmentSummaryRow = {
+  shipment_id: string;
+  barcode: string;
+  wb_code: string | null;
+  supplier_code: string | null;
+  size: string | null;
   qty: number;
 };
