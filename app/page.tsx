@@ -33,7 +33,7 @@ export default function Home() {
 
   // Блок 2
   const [barcode, setBarcode] = useState('');
-  const [withKIZ, setWithKIZ] = useState(false);
+  const [withKIZ, setWithKIZ] = useState(true);
   const [kiz, setKiz] = useState('');
   const [wbCode, setWbCode] = useState('');
   const [supplierCode, setSupplierCode] = useState('');
