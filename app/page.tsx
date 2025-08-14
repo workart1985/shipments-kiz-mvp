@@ -45,7 +45,10 @@ export default function Home() {
 
   // Уведомления
   const [toast, setToast] = useState<{type:'success'|'error', text:string} | null>(null);
+
+  // Рефы для быстрого фокуса
   const barcodeRef = useRef<HTMLInputElement>(null);
+  const kizRef = useRef<HTMLInputElement>(null);
 
   const canAdd = useMemo(() => {
     if (!shipmentId || !boxId) return false;
@@ -65,14 +68,12 @@ export default function Home() {
 
     const res = await fetch(`/api/shipments?warehouse=${encodeURIComponent(warehouse)}&date=${shipDate}`);
     const data = await res.json();
-    if (res.ok) {
-      setShipments(data);
-    }
+    if (res.ok) setShipments(data);
   };
 
   useEffect(() => { loadShipments(); }, [warehouse, shipDate]);
 
-  // Когда выбрали поставку — чистим короба
+  // Когда выбрали поставку — чистим короба/таблицы
   useEffect(() => {
     setBoxes([]);
     setBoxId('');
@@ -84,6 +85,13 @@ export default function Home() {
   useEffect(() => {
     barcodeRef.current?.focus();
   }, [shipmentId, boxId]);
+
+  // Если включили КИЗ и у нас всё готово к вводу — сразу переводим фокус на поле КИЗ
+  useEffect(() => {
+    if (withKIZ && shipmentId && boxId && barcode.trim()) {
+      kizRef.current?.focus();
+    }
+  }, [withKIZ]);
 
   const createShipment = async () => {
     const res = await fetch('/api/shipments/create', {
@@ -117,27 +125,22 @@ export default function Home() {
     setBoxId(newBox.box_id);
   };
 
-  // Подгрузить листинг + сводку по текущему коробу
+  // Обновление листинга+сводки
   const refreshDataViews = async () => {
     if (!shipmentId) return;
     const [lres, sres] = await Promise.all([
       fetch(`/api/shipments/${shipmentId}/listing`),
       boxId ? fetch(`/api/boxes/${boxId}/summary`) : Promise.resolve({ ok:true, json: async()=>[] as any })
     ]);
-
     const ldata = await lres.json();
     const sdata = await (boxId ? sres.json() : []);
     if (lres.ok) setListing(ldata);
     if (boxId && sres.ok) setSummary(sdata);
   };
-
   useEffect(() => { refreshDataViews(); }, [shipmentId, boxId]);
 
   const onAdd = async () => {
-    if (!shipmentId || !boxId) {
-      setToast({ type:'error', text:'Выберите поставку и короб' });
-      return;
-    }
+    if (!shipmentId || !boxId) { setToast({ type:'error', text:'Выберите поставку и короб' }); return; }
     if (!barcode.trim()) { setToast({ type:'error', text:'Заполните ШК' }); return; }
     if (withKIZ && !kiz.trim()) { setToast({ type:'error', text:'Заполните КИЗ' }); return; }
 
@@ -163,6 +166,7 @@ export default function Home() {
       return;
     }
 
+    // Успешное добавление — очистка полей и фокус обратно в ШК
     setBarcode('');
     setKiz('');
     barcodeRef.current?.focus();
@@ -180,11 +184,36 @@ export default function Home() {
     await refreshDataViews();
   };
 
-  // Простейшее редактирование даты отгрузки (инфо-поле) — сохранять не обязательно в MVP.
   const saveDeliveryDateInfo = async () => {
     if (!shipmentId) return;
     setToast({ type:'success', text:'Дата отгрузки сохранена (локально для MVP)' });
   };
+
+  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+  // НОВОЕ: обработчики Enter для быстрого ввода
+  const handleBarcodeKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key === 'Enter') {
+      if (withKIZ) {
+        // если нужен КИЗ — прыгаем фокусом на поле КИЗ
+        e.preventDefault();
+        if (!barcode.trim()) { setToast({ type:'error', text:'Заполните ШК' }); return; }
+        kizRef.current?.focus();
+      } else {
+        // если КИЗ не нужен — сразу добавляем
+        if (canAdd) onAdd();
+        else setToast({ type:'error', text:'Выберите поставку и короб' });
+      }
+    }
+  };
+
+  const handleKizKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (canAdd) onAdd();
+      else setToast({ type:'error', text:'Заполните КИЗ' });
+    }
+  };
+  // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
@@ -244,33 +273,51 @@ export default function Home() {
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
           <div className="md:col-span-2">
             <label className="text-sm text-gray-600 mb-1 block">ШК</label>
-            <input ref={barcodeRef} value={barcode} onChange={e=>setBarcode(e.target.value)}
-                   onKeyDown={e=>{ if(e.key==='Enter' && canAdd) onAdd(); }}
-                   className="border rounded px-3 py-2 w-full" placeholder="Сканируй или вводи" />
+            <input
+              ref={barcodeRef}
+              value={barcode}
+              onChange={e=>setBarcode(e.target.value)}
+              onKeyDown={handleBarcodeKeyDown}
+              className="border rounded px-3 py-2 w-full"
+              placeholder="Сканируй или вводи"
+            />
           </div>
 
           <div className="flex items-center gap-2">
-            <input id="withKiz" type="checkbox" checked={withKIZ} onChange={e=>setWithKIZ(e.target.checked)} />
+            <input
+              id="withKiz"
+              type="checkbox"
+              checked={withKIZ}
+              onChange={e=>setWithKIZ(e.target.checked)}
+            />
             <label htmlFor="withKiz">Товар с КИЗ</label>
           </div>
 
           {withKIZ && (
             <div className="md:col-span-2">
               <label className="text-sm text-gray-600 mb-1 block">КИЗ</label>
-              <input value={kiz} onChange={e=>setKiz(e.target.value)}
-                     onKeyDown={e=>{ if(e.key==='Enter' && canAdd) onAdd(); }}
-                     className="border rounded px-3 py-2 w-full" placeholder="Код DataMatrix" />
+              <input
+                ref={kizRef}
+                value={kiz}
+                onChange={e=>setKiz(e.target.value)}
+                onKeyDown={handleKizKeyDown}
+                className="border rounded px-3 py-2 w-full"
+                placeholder="Код DataMatrix"
+              />
             </div>
           )}
 
           <div className="md:col-span-1">
-            <button disabled={!canAdd} onClick={onAdd}
-                    className={`w-full px-3 py-2 rounded ${canAdd?'bg-green-600 text-white':'bg-gray-200 text-gray-500'}`}>
+            <button
+              disabled={!canAdd}
+              onClick={onAdd}
+              className={`w-full px-3 py-2 rounded ${canAdd?'bg-green-600 text-white':'bg-gray-200 text-gray-500'}`}
+            >
               Добавить
             </button>
           </div>
 
-          {/* Доп.поля — по желанию, можно скрывать в MVP */}
+          {/* Доп.поля — по желанию, можно скрыть в MVP */}
           <div>
             <label className="text-xs text-gray-500 block">Артикул WB</label>
             <input value={wbCode} onChange={e=>setWbCode(e.target.value)} className="border rounded px-2 py-1 w-full" />
