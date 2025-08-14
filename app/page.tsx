@@ -33,7 +33,7 @@ export default function Home() {
 
   // Блок 2
   const [barcode, setBarcode] = useState('');
-  const [withKIZ, setWithKIZ] = useState(true); // включаем по умолчанию
+  const [withKIZ, setWithKIZ] = useState(true); // включен по умолчанию
   const [kiz, setKiz] = useState('');
   const [wbCode, setWbCode] = useState('');
   const [supplierCode, setSupplierCode] = useState('');
@@ -46,9 +46,12 @@ export default function Home() {
   // Уведомления
   const [toast, setToast] = useState<{type:'success'|'error', text:string} | null>(null);
 
-  // Рефы для быстрого фокуса
+  // Рефы
   const barcodeRef = useRef<HTMLInputElement>(null);
   const kizRef = useRef<HTMLInputElement>(null);
+
+  // Лимит для листинга (последние N строк)
+  const [listLimit, setListLimit] = useState<number>(200);
 
   const canAdd = useMemo(() => {
     if (!shipmentId || !boxId) return false;
@@ -70,15 +73,26 @@ export default function Home() {
     const data = await res.json();
     if (res.ok) setShipments(data);
   };
-
   useEffect(() => { loadShipments(); }, [warehouse, shipDate]);
 
-  // Когда выбрали поставку — чистим короба/таблицы
+  // Подгрузка коробов по выбранной поставке
+  const loadBoxes = async (sid: string) => {
+    if (!sid) { setBoxes([]); setBoxId(''); return; }
+    const res = await fetch(`/api/boxes?shipment_id=${sid}`);
+    const data = await res.json();
+    if (res.ok) {
+      setBoxes(data);
+      if (data.length && !boxId) setBoxId(data[0].box_id);
+    }
+  };
+
+  // Когда выбрали поставку — сбрасываем таблицы, грузим короба
   useEffect(() => {
-    setBoxes([]);
-    setBoxId('');
     setListing([]);
     setSummary([]);
+    setBoxId('');
+    setBoxes([]);
+    if (shipmentId) loadBoxes(shipmentId);
   }, [shipmentId]);
 
   // При выборе поставки — подтягиваем её текущую дату отгрузки
@@ -88,17 +102,10 @@ export default function Home() {
     setDeliveryDate(s?.delivery_date ?? null);
   }, [shipmentId, shipments]);
 
-  // Автофокус на поле ШК
+  // Автофокус на поле ШК при готовом контексте
   useEffect(() => {
     barcodeRef.current?.focus();
   }, [shipmentId, boxId]);
-
-  // Если включили КИЗ и контекст готов — ведём фокус на поле КИЗ
-  useEffect(() => {
-    if (withKIZ && shipmentId && boxId && barcode.trim()) {
-      kizRef.current?.focus();
-    }
-  }, [withKIZ, shipmentId, boxId, barcode]);
 
   const createShipment = async () => {
     const res = await fetch('/api/shipments/create', {
@@ -136,7 +143,7 @@ export default function Home() {
   const refreshDataViews = async () => {
     if (!shipmentId) return;
     const [lres, sres] = await Promise.all([
-      fetch(`/api/shipments/${shipmentId}/listing`),
+      fetch(`/api/shipments/${shipmentId}/listing?limit=${listLimit}`),
       boxId ? fetch(`/api/boxes/${boxId}/summary`) : Promise.resolve({ ok:true, json: async()=>[] as any })
     ]);
     const ldata = await lres.json();
@@ -144,7 +151,7 @@ export default function Home() {
     if (lres.ok) setListing(ldata);
     if (boxId && sres.ok) setSummary(sdata);
   };
-  useEffect(() => { refreshDataViews(); }, [shipmentId, boxId]);
+  useEffect(() => { refreshDataViews(); }, [shipmentId, boxId, listLimit]);
 
   const onAdd = async () => {
     if (!shipmentId || !boxId) { setToast({ type:'error', text:'Выберите поставку и короб' }); return; }
@@ -173,7 +180,7 @@ export default function Home() {
       return;
     }
 
-    // Успешное добавление — очистка полей и фокус обратно в ШК
+    // Успешно — очистка полей и фокус в ШК
     setBarcode('');
     setKiz('');
     barcodeRef.current?.focus();
@@ -326,7 +333,7 @@ export default function Home() {
             <button
               disabled={!canAdd}
               onClick={onAdd}
-              className={`w/full px-3 py-2 rounded ${canAdd?'bg-green-600 text-white':'bg-gray-200 text-gray-500'}`}
+              className={`w-full px-3 py-2 rounded ${canAdd?'bg-green-600 text-white':'bg-gray-200 text-gray-500'}`}
             >
               Добавить
             </button>
@@ -351,6 +358,15 @@ export default function Home() {
       {/* Блок 3: Таблицы */}
       <div className="mb-4">
         <h2 className="font-semibold mb-2">Таблица сканирований</h2>
+        <div className="mb-2 text-sm text-gray-600 flex items-center gap-2">
+          Показать последние:
+          <select className="border rounded px-2 py-1" value={listLimit} onChange={e=>setListLimit(Number(e.target.value))}>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+            <option value={500}>500</option>
+          </select>
+        </div>
         <Table
           header={['ШК','Артикул WB','Артикул пост.','Размер','КИЗ','Время','—']}
           rows={listing.map(r=>[
