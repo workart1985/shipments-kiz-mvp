@@ -274,7 +274,7 @@ export default function Home() {
 
       {/* Блок 2: ввод */}
       <div className="p-3 rounded-2xl border mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
           <div className="md:col-span-2">
             <label className="text-sm text-gray-600 mb-1 block">ШК</label>
             <input ref={barcodeRef} value={barcode} onChange={e=>setBarcode(e.target.value)} onKeyDown={handleBarcodeKeyDown}
@@ -296,20 +296,7 @@ export default function Home() {
                     className={`w-full px-3 py-2 rounded ${canAdd?'bg-green-600 text-white':'bg-gray-200 text-gray-500'}`}>
               Добавить
             </button>
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block">Артикул WB</label>
-            <input value={wbCode} onChange={e=>setWbCode(e.target.value)} className="border rounded px-2 py-1 w-full" />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block">Артикул поставщика</label>
-            <input value={supplierCode} onChange={e=>setSupplierCode(e.target.value)} className="border rounded px-2 py-1 w-full" />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block">Размер</label>
-            <input value={size} onChange={e=>setSize(e.target.value)} className="border rounded px-2 py-1 w-full" />
-          </div>
-        </div>
+          </div></div>
       </div>
 
       {/* Блок 3: Таблицы */}
