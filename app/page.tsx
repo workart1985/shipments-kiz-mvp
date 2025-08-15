@@ -395,7 +395,7 @@ export default function Home() {
 /** КОМПОНЕНТ: сводная по поставке (без КИЗ) */
 function ShipmentSummary({ shipmentId }: { shipmentId: string }) {
   const [rows, setRows] = useState<Array<{
-    shipment_id: string;
+    shipment_id?: string;
     barcode: string;
     wb_code: string | null;
     supplier_code: string | null;
@@ -409,6 +409,7 @@ function ShipmentSummary({ shipmentId }: { shipmentId: string }) {
       const res = await fetch(`/api/shipments/${shipmentId}/summary`);
       const data = await res.json();
       if (res.ok) setRows(data);
+      else setRows([]);
     };
     load();
   }, [shipmentId]);
