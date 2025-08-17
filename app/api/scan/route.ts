@@ -1,50 +1,86 @@
 import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabaseServer';
-import { z } from 'zod';
+import { createClient } from '@supabase/supabase-js';
 
-const Body = z.object({
-  shipment_id: z.string().uuid(),
-  box_id: z.string().uuid(),
-  barcode: z.string().min(1),
-  wb_code: z.string().optional().nullable(),
-  supplier_code: z.string().optional().nullable(),
-  size: z.string().optional().nullable(),
-  with_kiz: z.boolean(),
-  kiz_code: z.string().optional().nullable(),
-});
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
+);
+
+type ScanBody = {
+  shipment_id: string;
+  box_id: string | null;
+  barcode: string;
+  wb_code?: string | null;
+  supplier_code?: string | null;
+  size?: string | null;
+  with_kiz: boolean;
+  kiz_code?: string | null;
+};
 
 export async function POST(req: Request) {
   try {
-    const payload = Body.parse(await req.json());
+    const body = (await req.json()) as ScanBody;
 
-    if (payload.with_kiz && !payload.kiz_code) {
-      return NextResponse.json({ error: 'Заполните КИЗ' }, { status: 400 });
+    if (!body.shipment_id || !body.barcode) {
+      return NextResponse.json({ error: 'shipment_id и barcode обязательны' }, { status: 400 });
     }
 
-    const { data, error } = await supabaseServer.rpc('scan_kiz', {
-      p_shipment_id: payload.shipment_id,
-      p_box_id: payload.box_id,
-      p_barcode: payload.barcode,
-      p_wb_code: payload.wb_code ?? null,
-      p_supplier_code: payload.supplier_code ?? null,
-      p_size: payload.size ?? null,
-      p_with_kiz: payload.with_kiz,
-      p_kiz_code: payload.kiz_code ?? null
+    let { shipment_id, box_id, barcode, wb_code, supplier_code, size, with_kiz, kiz_code } = body;
+
+    // --- Автоподстановка из WB-таблиц, если каких-то полей нет ---
+    if (!wb_code || !supplier_code || !size) {
+      // 1) sku -> chrtid
+      const { data: skuRow } = await supabase
+        .from('wb_size_skus')
+        .select('chrtid')
+        .eq('sku', barcode)
+        .maybeSingle();
+
+      if (skuRow?.chrtid != null) {
+        // 2) chrtid -> techsize, nmid
+        const { data: sizeRow } = await supabase
+          .from('wb_sizes')
+          .select('techsize, nmid')
+          .eq('chrtid', skuRow.chrtid)
+          .maybeSingle();
+
+        if (sizeRow) {
+          size = size ?? (sizeRow.techsize ?? null);
+          wb_code = wb_code ?? (sizeRow.nmid != null ? String(sizeRow.nmid) : null);
+
+          // 3) nmid -> vendorcode
+          if (sizeRow.nmid != null && !supplier_code) {
+            const { data: cardRow } = await supabase
+              .from('wb_cards')
+              .select('vendorcode')
+              .eq('nmid', sizeRow.nmid)
+              .maybeSingle();
+            supplier_code = supplier_code ?? (cardRow?.vendorcode ?? null);
+          }
+        }
+      }
+    }
+
+    // --- Вызов RPC: имена аргументов ДОЛЖНЫ совпадать с именами в БД (p_...) ---
+    const { data, error } = await supabase.rpc('scan_kiz', {
+      p_shipment_id: shipment_id,
+      p_box_id: box_id,
+      p_barcode: barcode,
+      p_wb_code: wb_code ?? null,
+      p_supplier_code: supplier_code ?? null,
+      p_size: size ?? null,
+      p_with_kiz: with_kiz,
+      p_kiz_code: with_kiz ? (kiz_code ?? null) : null
     });
 
     if (error) {
-      const msg = String(error.message || '');
-      if (msg.includes('KIZ_ALREADY_USED')) {
-        return NextResponse.json({ error: 'КИЗ уже был отсканирован в другой отгрузке' }, { status: 409 });
-      }
-      if (msg.includes('KIZ_DUP_IN_SHIPMENT')) {
-        return NextResponse.json({ error: 'КИЗ уже есть в этой поставке' }, { status: 409 });
-      }
-      return NextResponse.json({ error: msg }, { status: 400 });
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ id: data as string });
+    // Функция в БД возвращает uuid вставленной строки
+    return NextResponse.json({ ok: true, id: data });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message ?? 'scan failed' }, { status: 400 });
+    return NextResponse.json({ error: e?.message || 'scan failed' }, { status: 500 });
   }
 }
